@@ -12,43 +12,47 @@ import java.util.List;
 import java.util.Map;
 
 public class DatabaseNode {
-    private int tcpPort;
-    private Map<Integer, Integer> keyValuePairs;
-    private List<Socket> connectionSockets;
+    private final Map<Integer, Integer> keyValuePairs;
+    private final List<NodeConnectionHandler> connectionHandlers;
+    private final int tcpPort;
 
     public DatabaseNode(int tcpPort, Map<Integer, Integer> keyValuePairs, List<String> connections) {
         this.tcpPort = tcpPort;
         this.keyValuePairs = keyValuePairs;
-        this.connectionSockets = new ArrayList<>();
+        this.connectionHandlers = new ArrayList<>();
         for (String connection : connections) {
             String[] parts = connection.split(":");
             String host = parts[0];
             int port = Integer.parseInt(parts[1]);
-            try {
-                Socket socket = new Socket(host, port);
-                connectionSockets.add(socket);
-            } catch (IOException e) {
-                System.err.println("Error connecting to " + host + ":" + port);
-                e.printStackTrace();
-            }
+            NodeConnectionHandler handler = new NodeConnectionHandler(host, port, this);
+            connectionHandlers.add(handler);
+            handler.start();
         }
     }
 
     public static void main(String[] args) {
-        int tcpPort = 0;
-        Map<Integer, Integer> keyValuePairs = new HashMap<Integer, Integer>();
-        List<String> connections = new ArrayList<String>();
+        Map<Integer, Integer> keyValuePairs = new HashMap<>();
+        List<String> connections = new ArrayList<>();
 
-        for (int i = 0; i < args.length; i++) {
-            if (args[i].equals("-tcpport")) {
+        int i = 0;
+        int tcpPort = -1;
+        while (i < args.length) {
+            String arg = args[i];
+            if (arg.equals("-tcpport")) {
                 tcpPort = Integer.parseInt(args[i + 1]);
-            } else if (args[i].equals("-record")) {
-                String[] record = args[i + 1].split(":");
-                int key = Integer.parseInt(record[0]);
-                int value = Integer.parseInt(record[1]);
+                i += 2;
+            } else if (arg.equals("-record")) {
+                String[] parts = args[i + 1].split(":");
+                int key = Integer.parseInt(parts[0]);
+                int value = Integer.parseInt(parts[1]);
                 keyValuePairs.put(key, value);
-            } else if (args[i].equals("-connect")) {
+                i += 2;
+            } else if (arg.equals("-connect")) {
                 connections.add(args[i + 1]);
+                i += 2;
+            } else {
+                System.err.println("Invalid argument: " + arg);
+                i++;
             }
         }
 
@@ -62,7 +66,7 @@ public class DatabaseNode {
             serverSocket = new ServerSocket(tcpPort);
             while (true) {
                 Socket clientSocket = serverSocket.accept();
-                handleRequest(clientSocket, connectionSockets);
+                handleRequest(clientSocket);
             }
         } catch (IOException e) {
             System.err.println("Error starting server on port " + tcpPort);
@@ -72,8 +76,8 @@ public class DatabaseNode {
                 if (serverSocket != null) {
                     serverSocket.close();
                 }
-                for (Socket socket : connectionSockets) {
-                    socket.close();
+                for (NodeConnectionHandler handler : connectionHandlers) {
+                    handler.close();
                 }
             } catch (IOException e) {
                 System.err.println("Error closing server socket");
@@ -82,7 +86,7 @@ public class DatabaseNode {
         }
     }
 
-    private void handleRequest(Socket clientSocket, List<Socket> connectionSockets) {
+    private void handleRequest(Socket clientSocket) {
         BufferedReader in = null;
         PrintWriter out = null;
         try {
@@ -109,8 +113,10 @@ public class DatabaseNode {
                 String[] connection = requestParts[1].split(":");
                 String host = connection[0];
                 int port = Integer.parseInt(connection[1]);
-                Socket socket = new Socket(host, port);
-                connectionSockets.add(socket);
+                NodeConnectionHandler handler = new NodeConnectionHandler(host, port, this);
+                connectionHandlers.add(handler);
+                handler.start();
+                out.println("OK");
             }
         } catch (IOException e) {
             System.err.println("Error handling request");
@@ -125,10 +131,13 @@ public class DatabaseNode {
                 }
                 clientSocket.close();
             } catch (IOException e) {
-                System.err.println("Error closing client socket");
+                System.err.println("Error closing socket");
                 e.printStackTrace();
             }
         }
     }
 
+    public int getTcpPort() {
+        return tcpPort;
+    }
 }
