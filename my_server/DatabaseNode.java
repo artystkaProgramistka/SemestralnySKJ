@@ -12,14 +12,26 @@ import java.util.List;
 import java.util.Map;
 
 public class DatabaseNode {
-    private final int tcpPort;
-    private final Map<Integer, Integer> keyValuePairs;
-    private final List<String> connections;
+    private int tcpPort;
+    private Map<Integer, Integer> keyValuePairs;
+    private List<Socket> connectionSockets;
 
     public DatabaseNode(int tcpPort, Map<Integer, Integer> keyValuePairs, List<String> connections) {
         this.tcpPort = tcpPort;
         this.keyValuePairs = keyValuePairs;
-        this.connections = connections;
+        this.connectionSockets = new ArrayList<>();
+        for (String connection : connections) {
+            String[] parts = connection.split(":");
+            String host = parts[0];
+            int port = Integer.parseInt(parts[1]);
+            try {
+                Socket socket = new Socket(host, port);
+                connectionSockets.add(socket);
+            } catch (IOException e) {
+                System.err.println("Error connecting to " + host + ":" + port);
+                e.printStackTrace();
+            }
+        }
     }
 
     public static void main(String[] args) {
@@ -46,16 +58,8 @@ public class DatabaseNode {
 
     public void start() {
         ServerSocket serverSocket = null;
-        List<Socket> connectionSockets = new ArrayList<>();
         try {
             serverSocket = new ServerSocket(tcpPort);
-            for (String connection : connections) {
-                String[] parts = connection.split(":");
-                String host = parts[0];
-                int port = Integer.parseInt(parts[1]);
-                Socket socket = new Socket(host, port);
-                connectionSockets.add(socket);
-            }
             while (true) {
                 Socket clientSocket = serverSocket.accept();
                 handleRequest(clientSocket, connectionSockets);
