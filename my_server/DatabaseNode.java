@@ -46,11 +46,19 @@ public class DatabaseNode {
 
     public void start() {
         ServerSocket serverSocket = null;
+        List<Socket> connectionSockets = new ArrayList<>();
         try {
             serverSocket = new ServerSocket(tcpPort);
+            for (String connection : connections) {
+                String[] parts = connection.split(":");
+                String host = parts[0];
+                int port = Integer.parseInt(parts[1]);
+                Socket socket = new Socket(host, port);
+                connectionSockets.add(socket);
+            }
             while (true) {
                 Socket clientSocket = serverSocket.accept();
-                handleRequest(clientSocket);
+                handleRequest(clientSocket, connectionSockets);
             }
         } catch (IOException e) {
             System.err.println("Error starting server on port " + tcpPort);
@@ -60,6 +68,9 @@ public class DatabaseNode {
                 if (serverSocket != null) {
                     serverSocket.close();
                 }
+                for (Socket socket : connectionSockets) {
+                    socket.close();
+                }
             } catch (IOException e) {
                 System.err.println("Error closing server socket");
                 e.printStackTrace();
@@ -67,7 +78,7 @@ public class DatabaseNode {
         }
     }
 
-    private void handleRequest(Socket clientSocket) {
+    private void handleRequest(Socket clientSocket, List<Socket> connectionSockets) {
         BufferedReader in = null;
         PrintWriter out = null;
         try {
@@ -90,6 +101,12 @@ public class DatabaseNode {
                 } else {
                     out.println("ERROR");
                 }
+            } else if (operation.equals("connect")) {
+                String[] connection = requestParts[1].split(":");
+                String host = connection[0];
+                int port = Integer.parseInt(connection[1]);
+                Socket socket = new Socket(host, port);
+                connectionSockets.add(socket);
             }
         } catch (IOException e) {
             System.err.println("Error handling request");
