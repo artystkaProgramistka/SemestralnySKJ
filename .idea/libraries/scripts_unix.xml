@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="scripts_unix">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/scripts_unix.zip!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
