@@ -6,40 +6,44 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 
-public class NodeConnectionHandler extends Thread {
-    private final String host;
-    private final int port;
-    private final DatabaseNode node;
-    private Socket socket;
+class NodeConnectionHandler extends Thread {
 
-    public NodeConnectionHandler(String host, int port, DatabaseNode node) {
+    public final String host;
+    public final int port;
+    private final Socket socket;
+
+    private final DatabaseNode hostNode;
+
+    public NodeConnectionHandler(String host, int port, DatabaseNode hostNode) throws IOException {
         this.host = host;
         this.port = port;
-        this.node = node;
-    }
+        this.socket = new Socket(host, port);
+        this.hostNode = hostNode;
 
-    public void run() {
-        try {
-            socket = new Socket(host, port);
-            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-
-            out.println("connect " + node.getTcpPort());
-            String response = in.readLine();
-            if (!response.equals("OK")) {
-                System.err.println("Error connecting to node at " + host + ":" + port);
-            }
-        } catch (IOException e) {
-            System.err.println("Error connecting to node at " + host + ":" + port);
-            e.printStackTrace();
-        }
-    }
-
-    public void close() throws IOException {
-        socket.close();
+        // TODO: send a connection request
     }
 
     public Socket getSocket() {
         return socket;
+    }
+
+    @Override
+    public void run() {
+        try {
+            while (true) {
+                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                String request = in.readLine();
+                String response = handleRequest(request);
+                PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+                out.println(response);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public String handleRequest(String request) {
+        // TODO
+        return "TODO";
     }
 }

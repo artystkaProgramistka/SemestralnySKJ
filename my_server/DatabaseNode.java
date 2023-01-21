@@ -16,7 +16,7 @@ public class DatabaseNode {
     private final List<NodeConnectionHandler> connectionHandlers;
     private final int tcpPort;
 
-    public DatabaseNode(int tcpPort, Map<Integer, Integer> keyValuePairs, List<String> connections) {
+    public DatabaseNode(int tcpPort, Map<Integer, Integer> keyValuePairs, List<String> connections) throws IOException {
         this.tcpPort = tcpPort;
         this.keyValuePairs = keyValuePairs;
         this.connectionHandlers = new ArrayList<>();
@@ -30,7 +30,7 @@ public class DatabaseNode {
         }
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         Map<Integer, Integer> keyValuePairs = new HashMap<>();
         List<String> connections = new ArrayList<>();
 
@@ -61,83 +61,82 @@ public class DatabaseNode {
     }
 
     public void start() {
-        ServerSocket serverSocket = null;
+        // Start listening for requests from other nodes
+        for (NodeConnectionHandler handler : connectionHandlers) {
+            new Thread(handler).start();
+        }
+
+        // Start listening for client requests
         try {
-            serverSocket = new ServerSocket(tcpPort);
+            ServerSocket serverSocket = new ServerSocket(tcpPort);
             while (true) {
-                Socket clientSocket = serverSocket.accept();
-                handleRequest(clientSocket);
+                Socket newSocket = serverSocket.accept();
+                new Thread(() -> {
+                    try {
+                        BufferedReader in = new BufferedReader(new InputStreamReader(newSocket.getInputStream()));
+                        PrintWriter out = new PrintWriter(newSocket.getOutputStream(), true);
+                        String request = in.readLine();
+                        String response = handleRequest(request);
+                        out.println(response);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }).start();
             }
         } catch (IOException e) {
-            System.err.println("Error starting server on port " + tcpPort);
             e.printStackTrace();
-        } finally {
-            try {
-                if (serverSocket != null) {
-                    serverSocket.close();
-                }
-                for (NodeConnectionHandler handler : connectionHandlers) {
-                    handler.close();
-                }
-            } catch (IOException e) {
-                System.err.println("Error closing server socket");
-                e.printStackTrace();
-            }
         }
     }
 
-    private void handleRequest(Socket clientSocket) {
-        BufferedReader in = null;
-        PrintWriter out = null;
-        try {
-            in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-            out = new PrintWriter(clientSocket.getOutputStream(), true);
-
-            String request = in.readLine();
-            String[] requestParts = request.split(" ");
-            String operation = requestParts[0];
-            if (operation.equals("set-value")) {
-                int key = Integer.parseInt(requestParts[1]);
-                int value = Integer.parseInt(requestParts[2]);
-                keyValuePairs.put(key, value);
-                out.println("OK");
-            } else if (operation.equals("get-value")) {
-                int key = Integer.parseInt(requestParts[1]);
-                Integer value = keyValuePairs.get(key);
-                if (value != null) {
-                    out.println(key + ":" + value);
-                } else {
-                    out.println("ERROR");
-                }
-            } else if (operation.equals("connect")) {
-                String[] connection = requestParts[1].split(":");
-                String host = connection[0];
-                int port = Integer.parseInt(connection[1]);
-                NodeConnectionHandler handler = new NodeConnectionHandler(host, port, this);
-                connectionHandlers.add(handler);
-                handler.start();
-                out.println("OK");
-            }
-        } catch (IOException e) {
-            System.err.println("Error handling request");
-            e.printStackTrace();
-        } finally {
-            try {
-                if (in != null) {
-                    in.close();
-                }
-                if (out != null) {
-                    out.close();
-                }
-                clientSocket.close();
-            } catch (IOException e) {
-                System.err.println("Error closing socket");
-                e.printStackTrace();
-            }
+    public String handleRequest(String request) {
+        String[] parts = request.split(" ");
+        String operation = parts[0];
+        if (operation.equals("connect")) {
+            // TODO
+            return "TODO";
+        } else if (operation.equals("set-value")) {
+            return handleSetValue(parts[1]);
+        } else if (operation.equals("get-value")) {
+            return handleGetValue(parts[1]);
+        } else {
+            return "ERROR";
         }
+        // TODO: implement other operations
     }
 
-    public int getTcpPort() {
-        return tcpPort;
+    private String handleSetValue(String keyValueString) {
+        String[] keyValue = keyValueString.split(":");
+        int key = Integer.parseInt(keyValue[0]);
+        int value = Integer.parseInt(keyValue[1]);
+        keyValuePairs.put(key, value);
+        return "OK";
+    }
+
+    private String handleGetValue(String keyString) {
+        int key = Integer.parseInt(keyString);
+        if (keyValuePairs.containsKey(key)) {
+            return key + ":" + keyValuePairs.get(key);
+        } else {
+            // Query connected nodes
+            for (NodeConnectionHandler handler : connectionHandlers) {
+                try {
+                    // TODO: make a string read/write wrapper
+                    PrintWriter out = new PrintWriter(handler.getSocket().getOutputStream(), true);
+
+                    // TODO: fix -- this will cause recursive requests
+                    // create a handler method getValue, and pass the node originally making query
+                    out.println("get-value " + key);
+                    BufferedReader in = new BufferedReader(new InputStreamReader(handler.getSocket().getInputStream()));
+                    String response = in.readLine();
+                    if (!response.equals("ERROR")) {
+                        return response;
+                    }
+                } catch (IOException e) {
+                    System.err.println("Error sending message to node at " + handler.host + ":" + handler.port);
+                    e.printStackTrace();
+                }
+            }
+            return "ERROR";
+        }
     }
 }
