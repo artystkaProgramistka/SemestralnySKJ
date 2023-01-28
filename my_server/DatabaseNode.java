@@ -7,10 +7,11 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 public class DatabaseNode {
-    private final List<NodeConnectionHandler> connectionHandlers;
+    private final HashMap<String, NodeConnectionHandler> connectionHandlers;
     private final int tcpPort;
     private int key;
     private int value;
@@ -19,14 +20,13 @@ public class DatabaseNode {
         this.tcpPort = tcpPort;
         this.key = key;
         this.value = value;
-        this.connectionHandlers = new ArrayList<>();
+        this.connectionHandlers = new HashMap<>();
         for (String connection : connections) {
             String[] parts = connection.split(":");
             String host = parts[0];
             int port = Integer.parseInt(parts[1]);
-            NodeConnectionHandler handler = new NodeConnectionHandler(host, port, this);
-            connectionHandlers.add(handler);
-            handler.start();
+            NodeConnectionHandler handler = new NodeConnectionHandler(host, port, getMyHost(), tcpPort, true);
+            connectionHandlers.put(connection, handler);
         }
     }
 
@@ -61,11 +61,6 @@ public class DatabaseNode {
     }
 
     public void start() {
-        // Start listening for requests from other nodes
-        for (NodeConnectionHandler handler : connectionHandlers) {
-            new Thread(handler).start();
-        }
-
         // Start listening for client requests
         try {
             ServerSocket serverSocket = new ServerSocket(tcpPort);
@@ -77,12 +72,15 @@ public class DatabaseNode {
                     String request = in.readLine();
                     String response = handleRequest(request);
                     if (response == "TERMINATED") {
-                        System.out.println("Terminating server on port : " + tcpPort);
+                        System.out.println("Terminating server");
+                        out.println("OK");
                         break;
+                    } else {
+                        System.out.println("Sending response to client: " + response);
+                        out.println(response);
                     }
-                    System.out.println("Sending response to client: " + response);
-                    out.println(response);
                     out.close();
+                    in.close();
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -92,13 +90,34 @@ public class DatabaseNode {
         }
     }
 
+    public String getMyHost() {
+        return "localhost";
+    }
+
+    public String getMyHostId() {
+        return "HOST_ID:" + getMyHost() + ":" + tcpPort;
+    }
+
     public String handleRequest(String request) {
         String[] parts = request.split(" ");
         String operation = parts[0];
         System.out.println("Handling request: " + request);
-        if (operation.equals("connect")) {
-            // TODO
-            return "TODO";
+        if (operation.equals("srv__connect")) {
+            String[] addr = parts[1].split(":");
+            String host = addr[0];
+            int port = Integer.parseInt(addr[1]);
+            System.out.println("Adding new server connection: " + host + ":" + port);
+            NodeConnectionHandler handler = new NodeConnectionHandler(host, port, getMyHost(), tcpPort, false);
+            connectionHandlers.put(parts[1], handler);
+            return "OK";
+        } else if (operation.equals("srv__disconnect")) {
+            connectionHandlers.remove(parts[1]);
+            System.out.println("Server " + parts[1] + " has disconnected.");
+            return "OK";
+        } else if (operation.equals("srv__get-min")) {
+            return handleGetMinOrMax("min", parts[1]);
+        } else if (operation.equals("srv__get-max")) {
+            return handleGetMinOrMax("max", parts[1]);
         } else if (operation.equals("set-value")) {
             return handleSetValue(parts[1]);
         } else if (operation.equals("get-value")) {
@@ -107,9 +126,13 @@ public class DatabaseNode {
             return handleFindKey(parts[1]);
         } else if (operation.equals("new-record")) {
             return handleNewRecord(parts[1]);
+        } else if (operation.equals("get-min")) {
+            return handleGetMin();
+        } else if (operation.equals("get-max")) {
+            return handleGetMax();
         } else if (operation.equals("terminate")) {
-            for (NodeConnectionHandler handler : connectionHandlers) {
-                handler.terminate();
+            for (NodeConnectionHandler handler : connectionHandlers.values()) {
+                handler.disconnect();
             }
             return "TERMINATED";
         } else {
@@ -135,24 +158,8 @@ public class DatabaseNode {
         if (_key == key) {
             return key + ":" + value;
         } else {
-            // Query connected nodes
-            for (NodeConnectionHandler handler : connectionHandlers) {
-                try {
-                    // TODO: make a string read/write wrapper
-                    PrintWriter out = new PrintWriter(handler.getSocket().getOutputStream(), true);
-
-                    // TODO: fix -- this will cause recursive requests
-                    // create a handler method getValue, and pass the node originally making query
-                    out.println("get-value " + key);
-                    BufferedReader in = new BufferedReader(new InputStreamReader(handler.getSocket().getInputStream()));
-                    String response = in.readLine();
-                    if (!response.equals("ERROR")) {
-                        return response;
-                    }
-                } catch (IOException e) {
-                    System.err.println("Error sending message to node at " + handler.host + ":" + handler.port);
-                    e.printStackTrace();
-                }
+            System.out.println("TODO");
+            for (NodeConnectionHandler handler : connectionHandlers.values()) {
             }
             return "ERROR";
         }
@@ -161,8 +168,7 @@ public class DatabaseNode {
     private String handleFindKey(String keyString) {
         int _key = Integer.parseInt(keyString);
         if (_key == key) {
-            // TODO: get my ip
-            return "localhost:" + tcpPort;
+            return getMyHost() + ":" + tcpPort;
         } else {
             // TODO: query other noedes
         }
@@ -174,6 +180,40 @@ public class DatabaseNode {
         key = Integer.parseInt(keyValue[0]);
         value = Integer.parseInt(keyValue[1]);
         return "OK";
+    }
+
+    private String handleGetMinOrMax(String operation, String hostToSkip) {
+        int returnKey = key;
+        int returnValue = value;
+        for (HashMap.Entry<String, NodeConnectionHandler> entry : connectionHandlers.entrySet()) {
+            if (entry.getKey().equals(hostToSkip)) continue;
+            String[] keyValue = entry.getValue().getMin().split(":");
+            int k = Integer.parseInt(keyValue[0]);
+            int v = Integer.parseInt(keyValue[1]);
+            if (operation.equals("min")) {
+                if (v < returnValue) {
+                    returnKey = k;
+                    returnValue = k;
+                }
+            } else {
+                if (v > returnValue) {
+                    returnKey = k;
+                    returnValue = k;
+                }
+            }
+        }
+        return "" + returnKey + ":" + returnValue;
+    }
+    private String handleGetMinOrMax(String operation) {
+        return handleGetMinOrMax(operation, "");
+    }
+
+    private String handleGetMin() {
+        return handleGetMinOrMax("min");
+    }
+
+    private String handleGetMax() {
+        return handleGetMinOrMax("max");
     }
 
 }
