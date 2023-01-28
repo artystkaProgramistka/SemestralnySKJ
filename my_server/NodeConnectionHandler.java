@@ -78,11 +78,11 @@ class NodeConnectionHandler {
         }
     }
 
-    public String getOperation(String operation) {
-        return sendMessage("srv__get-" + operation + " " + myHost + ":" + myPort);
+    public String getOperation(String taskId, String operation) {
+        return sendMessage("srv__get-" + operation + " " + taskId + " " + myHost + ":" + myPort);
     }
 
-    public String findKey(int key) {
-        return sendMessage("srv__find-key " + key + " " + myHost + ":" + myPort);
+    public String findKey(String taskId, int key) {
+        return sendMessage("srv__find-key " + taskId + " " + key + " " + myHost + ":" + myPort);
     }
 }

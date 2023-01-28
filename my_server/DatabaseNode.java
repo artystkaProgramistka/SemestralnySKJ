@@ -8,6 +8,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 
 public class DatabaseNode {
@@ -15,6 +16,10 @@ public class DatabaseNode {
     private final int tcpPort;
     private int key;
     private int value;
+
+    // needed to avoid cycles in the network requests
+    private int nodeTaskIdCounter = 0;
+    private HashSet<String> doneTaskIds;
 
     public DatabaseNode(int tcpPort, int key, int value, List<String> connections) throws IOException {
         this.tcpPort = tcpPort;
@@ -28,6 +33,11 @@ public class DatabaseNode {
             NodeConnectionHandler handler = new NodeConnectionHandler(host, port, getMyHost(), tcpPort, true);
             connectionHandlers.put(connection, handler);
         }
+        doneTaskIds = new HashSet<>();
+    }
+
+    public String getNewTaskId() {
+        return "TASK-" + nodeTaskIdCounter++ + ":" + getMyHost() + ":" + tcpPort;
     }
 
     public static void main(String[] args) throws IOException {
@@ -115,23 +125,23 @@ public class DatabaseNode {
             System.out.println("Server " + parts[1] + " has disconnected.");
             return "OK";
         } else if (operation.equals("srv__get-min")) {
-            return handleGetMinOrMax("min", parts[1]);
+            return handleGetMinOrMax(parts[1], "min", parts[2]);
         } else if (operation.equals("srv__get-max")) {
-            return handleGetMinOrMax("max", parts[1]);
+            return handleGetMinOrMax(parts[1], "max", parts[2]);
         } else if (operation.equals("srv__find-key")) {
-            return handleFindKey(parts[1], parts[2]);
+            return handleFindKey(parts[1], parts[2], parts[3]);
         } else if (operation.equals("set-value")) {
             return handleSetValue(parts[1]);
         } else if (operation.equals("get-value")) {
             return handleGetValue(parts[1]);
         } else if (operation.equals("find-key")) {
-            return handleFindKey(parts[1], "");
+            return handleFindKey(getNewTaskId(), parts[1], "");
         } else if (operation.equals("new-record")) {
             return handleNewRecord(parts[1]);
         } else if (operation.equals("get-min")) {
-            return handleGetMinOrMax("min", "");
+            return handleGetMinOrMax(getNewTaskId(), "min", "");
         } else if (operation.equals("get-max")) {
-            return handleGetMinOrMax("max", "");
+            return handleGetMinOrMax(getNewTaskId(), "max", "");
         } else if (operation.equals("terminate")) {
             for (NodeConnectionHandler handler : connectionHandlers.values()) {
                 handler.disconnect();
@@ -167,14 +177,17 @@ public class DatabaseNode {
         }
     }
 
-    private String handleFindKey(String keyString, String hostToSkip) {
+    private String handleFindKey(String taskId, String keyString, String parentNode) {
+        if (doneTaskIds.contains(taskId)) return "ERROR";
+        doneTaskIds.add(taskId);
         int _key = Integer.parseInt(keyString);
         if (_key == key) {
             return getMyHost() + ":" + tcpPort;
         } else {
             for (HashMap.Entry<String, NodeConnectionHandler> entry : connectionHandlers.entrySet()) {
-                if (entry.getKey().equals(hostToSkip)) continue;
-                String searchResult = entry.getValue().findKey(_key);
+                if (entry.getKey().equals(parentNode)) continue;
+                String searchResult = entry.getValue().findKey(taskId, _key);
+                if (searchResult == "ERROR") continue;
                 if (!searchResult.equals("ERROR")) {
                     return searchResult;
                 }
@@ -190,12 +203,15 @@ public class DatabaseNode {
         return "OK";
     }
 
-    private String handleGetMinOrMax(String operation, String hostToSkip) {
+    private String handleGetMinOrMax(String taskId, String operation, String parentNode) {
+        if (doneTaskIds.contains(taskId)) return "ERROR";
+        doneTaskIds.add(taskId);
         int returnKey = key;
         int returnValue = value;
         for (HashMap.Entry<String, NodeConnectionHandler> entry : connectionHandlers.entrySet()) {
-            if (entry.getKey().equals(hostToSkip)) continue;
-            String[] keyValue = entry.getValue().getOperation(operation).split(":");
+            if (entry.getKey().equals(parentNode)) continue;
+            String[] keyValue = entry.getValue().getOperation(taskId, operation).split(":");
+            if (keyValue[0] == "ERROR") continue;
             int k = Integer.parseInt(keyValue[0]);
             int v = Integer.parseInt(keyValue[1]);
             if (operation.equals("min")) {
