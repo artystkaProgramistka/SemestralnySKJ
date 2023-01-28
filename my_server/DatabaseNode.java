@@ -118,18 +118,20 @@ public class DatabaseNode {
             return handleGetMinOrMax("min", parts[1]);
         } else if (operation.equals("srv__get-max")) {
             return handleGetMinOrMax("max", parts[1]);
+        } else if (operation.equals("srv__find-key")) {
+            return handleFindKey(parts[1], parts[2]);
         } else if (operation.equals("set-value")) {
             return handleSetValue(parts[1]);
         } else if (operation.equals("get-value")) {
             return handleGetValue(parts[1]);
         } else if (operation.equals("find-key")) {
-            return handleFindKey(parts[1]);
+            return handleFindKey(parts[1], "");
         } else if (operation.equals("new-record")) {
             return handleNewRecord(parts[1]);
         } else if (operation.equals("get-min")) {
-            return handleGetMin();
+            return handleGetMinOrMax("min", "");
         } else if (operation.equals("get-max")) {
-            return handleGetMax();
+            return handleGetMinOrMax("max", "");
         } else if (operation.equals("terminate")) {
             for (NodeConnectionHandler handler : connectionHandlers.values()) {
                 handler.disconnect();
@@ -165,12 +167,18 @@ public class DatabaseNode {
         }
     }
 
-    private String handleFindKey(String keyString) {
+    private String handleFindKey(String keyString, String hostToSkip) {
         int _key = Integer.parseInt(keyString);
         if (_key == key) {
             return getMyHost() + ":" + tcpPort;
         } else {
-            // TODO: query other noedes
+            for (HashMap.Entry<String, NodeConnectionHandler> entry : connectionHandlers.entrySet()) {
+                if (entry.getKey().equals(hostToSkip)) continue;
+                String searchResult = entry.getValue().findKey(_key);
+                if (!searchResult.equals("ERROR")) {
+                    return searchResult;
+                }
+            }
         }
         return "ERROR";
     }
@@ -187,7 +195,7 @@ public class DatabaseNode {
         int returnValue = value;
         for (HashMap.Entry<String, NodeConnectionHandler> entry : connectionHandlers.entrySet()) {
             if (entry.getKey().equals(hostToSkip)) continue;
-            String[] keyValue = entry.getValue().getMin().split(":");
+            String[] keyValue = entry.getValue().getOperation(operation).split(":");
             int k = Integer.parseInt(keyValue[0]);
             int v = Integer.parseInt(keyValue[1]);
             if (operation.equals("min")) {
@@ -195,25 +203,15 @@ public class DatabaseNode {
                     returnKey = k;
                     returnValue = k;
                 }
-            } else {
+            } else if (operation.equals("max")) {
                 if (v > returnValue) {
                     returnKey = k;
                     returnValue = k;
                 }
+            } else {
+                throw new RuntimeException();
             }
         }
         return "" + returnKey + ":" + returnValue;
     }
-    private String handleGetMinOrMax(String operation) {
-        return handleGetMinOrMax(operation, "");
-    }
-
-    private String handleGetMin() {
-        return handleGetMinOrMax("min");
-    }
-
-    private String handleGetMax() {
-        return handleGetMinOrMax("max");
-    }
-
 }

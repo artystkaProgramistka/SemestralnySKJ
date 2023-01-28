@@ -40,7 +40,6 @@ public class DatabaseClient {
             netSocket = new Socket(gateway, port);
             out = new PrintWriter(netSocket.getOutputStream(), true);
             in = new BufferedReader(new InputStreamReader(netSocket.getInputStream()));
-            System.out.println("Connected");
 
             System.out.println("Sending: " + command);
             out.println(command);
