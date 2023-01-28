@@ -71,17 +71,19 @@ public class DatabaseNode {
             ServerSocket serverSocket = new ServerSocket(tcpPort);
             while (true) {
                 Socket newSocket = serverSocket.accept();
-                new Thread(() -> {
-                    try {
-                        BufferedReader in = new BufferedReader(new InputStreamReader(newSocket.getInputStream()));
-                        PrintWriter out = new PrintWriter(newSocket.getOutputStream(), true);
-                        String request = in.readLine();
-                        String response = handleRequest(request);
-                        out.println(response);
-                    } catch (IOException e) {
-                        e.printStackTrace();
+                try {
+                    BufferedReader in = new BufferedReader(new InputStreamReader(newSocket.getInputStream()));
+                    PrintWriter out = new PrintWriter(newSocket.getOutputStream(), true);
+                    String request = in.readLine();
+                    String response = handleRequest(request);
+                    if (response == "TERMINATED") {
+                        System.out.println("Terminating server on port : " + tcpPort);
+                        break;
                     }
-                }).start();
+                    out.println(response);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -98,8 +100,13 @@ public class DatabaseNode {
             return handleSetValue(parts[1]);
         } else if (operation.equals("get-value")) {
             return handleGetValue(parts[1]);
+        } else if (operation.equals("terminate")) {
+            for (NodeConnectionHandler handler : connectionHandlers) {
+                handler.terminate();
+            }
+            return "TERMINATED";
         } else {
-            return "ERROR";
+            return "ERROR: " + operation;
         }
         // TODO: implement other operations
     }

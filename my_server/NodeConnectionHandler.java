@@ -42,6 +42,10 @@ class NodeConnectionHandler extends Thread {
         }
     }
 
+    public void terminate() {
+        // TODO
+    }
+
     public String handleRequest(String request) {
         // TODO
         return "TODO";
