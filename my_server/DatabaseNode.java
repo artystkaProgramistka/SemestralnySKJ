@@ -7,18 +7,18 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 public class DatabaseNode {
-    private final Map<Integer, Integer> keyValuePairs;
     private final List<NodeConnectionHandler> connectionHandlers;
     private final int tcpPort;
+    private int key;
+    private int value;
 
-    public DatabaseNode(int tcpPort, Map<Integer, Integer> keyValuePairs, List<String> connections) throws IOException {
+    public DatabaseNode(int tcpPort, int key, int value, List<String> connections) throws IOException {
         this.tcpPort = tcpPort;
-        this.keyValuePairs = keyValuePairs;
+        this.key = key;
+        this.value = value;
         this.connectionHandlers = new ArrayList<>();
         for (String connection : connections) {
             String[] parts = connection.split(":");
@@ -31,7 +31,8 @@ public class DatabaseNode {
     }
 
     public static void main(String[] args) throws IOException {
-        Map<Integer, Integer> keyValuePairs = new HashMap<>();
+        int key = -1;
+        int value = -1;
         List<String> connections = new ArrayList<>();
 
         int i = 0;
@@ -43,9 +44,8 @@ public class DatabaseNode {
                 i += 2;
             } else if (arg.equals("-record")) {
                 String[] parts = args[i + 1].split(":");
-                int key = Integer.parseInt(parts[0]);
-                int value = Integer.parseInt(parts[1]);
-                keyValuePairs.put(key, value);
+                key = Integer.parseInt(parts[0]);
+                value = Integer.parseInt(parts[1]);
                 i += 2;
             } else if (arg.equals("-connect")) {
                 connections.add(args[i + 1]);
@@ -56,7 +56,7 @@ public class DatabaseNode {
             }
         }
 
-        DatabaseNode node = new DatabaseNode(tcpPort, keyValuePairs, connections);
+        DatabaseNode node = new DatabaseNode(tcpPort, key, value, connections);
         node.start();
     }
 
@@ -80,7 +80,9 @@ public class DatabaseNode {
                         System.out.println("Terminating server on port : " + tcpPort);
                         break;
                     }
+                    System.out.println("Sending response to client: " + response);
                     out.println(response);
+                    out.close();
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -93,6 +95,7 @@ public class DatabaseNode {
     public String handleRequest(String request) {
         String[] parts = request.split(" ");
         String operation = parts[0];
+        System.out.println("Handling request: " + request);
         if (operation.equals("connect")) {
             // TODO
             return "TODO";
@@ -100,29 +103,37 @@ public class DatabaseNode {
             return handleSetValue(parts[1]);
         } else if (operation.equals("get-value")) {
             return handleGetValue(parts[1]);
+        } else if (operation.equals("find-key")) {
+            return handleFindKey(parts[1]);
+        } else if (operation.equals("new-record")) {
+            return handleNewRecord(parts[1]);
         } else if (operation.equals("terminate")) {
             for (NodeConnectionHandler handler : connectionHandlers) {
                 handler.terminate();
             }
             return "TERMINATED";
         } else {
-            return "ERROR: " + operation;
+            return "ERROR -- Unknown operation: " + operation;
         }
         // TODO: implement other operations
     }
 
     private String handleSetValue(String keyValueString) {
         String[] keyValue = keyValueString.split(":");
-        int key = Integer.parseInt(keyValue[0]);
-        int value = Integer.parseInt(keyValue[1]);
-        keyValuePairs.put(key, value);
+        int _key = Integer.parseInt(keyValue[0]);
+        int _value = Integer.parseInt(keyValue[1]);
+        if (key != _key) {
+            // TODO: query other nodes
+            return "ERROR";
+        }
+        this.value = _value;
         return "OK";
     }
 
     private String handleGetValue(String keyString) {
-        int key = Integer.parseInt(keyString);
-        if (keyValuePairs.containsKey(key)) {
-            return key + ":" + keyValuePairs.get(key);
+        int _key = Integer.parseInt(keyString);
+        if (_key == key) {
+            return key + ":" + value;
         } else {
             // Query connected nodes
             for (NodeConnectionHandler handler : connectionHandlers) {
@@ -146,4 +157,23 @@ public class DatabaseNode {
             return "ERROR";
         }
     }
+
+    private String handleFindKey(String keyString) {
+        int _key = Integer.parseInt(keyString);
+        if (_key == key) {
+            // TODO: get my ip
+            return "localhost:" + tcpPort;
+        } else {
+            // TODO: query other noedes
+        }
+        return "ERROR";
+    }
+
+    private String handleNewRecord(String keyValueString) {
+        String[] keyValue = keyValueString.split(":");
+        key = Integer.parseInt(keyValue[0]);
+        value = Integer.parseInt(keyValue[1]);
+        return "OK";
+    }
+
 }

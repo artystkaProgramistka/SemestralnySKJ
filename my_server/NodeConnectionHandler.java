@@ -17,10 +17,30 @@ class NodeConnectionHandler extends Thread {
     public NodeConnectionHandler(String host, int port, DatabaseNode hostNode) throws IOException {
         this.host = host;
         this.port = port;
+        System.out.println("Connecting to " + host + ":" + port);
         this.socket = new Socket(host, port);
+        System.out.println("Connected");
         this.hostNode = hostNode;
-
         // TODO: send a connection request
+
+        String response = sendMessage("connect:" + host + ":" + port);
+        if (response == "ERROR") {
+            System.out.println("ERROR connecting: " + host + ":" + port);
+        }
+    }
+
+    private String sendMessage(String message) {
+        String response = "ERROR";
+        try {
+            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+            out.println(message);
+            response = in.readLine();
+            out.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return response;
     }
 
     public Socket getSocket() {
@@ -30,6 +50,7 @@ class NodeConnectionHandler extends Thread {
     @Override
     public void run() {
         try {
+            // Receive messages from the other connected server
             while (true) {
                 BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
                 String request = in.readLine();
@@ -43,11 +64,16 @@ class NodeConnectionHandler extends Thread {
     }
 
     public void terminate() {
-        // TODO
+        try {
+            socket.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     public String handleRequest(String request) {
         // TODO
+        System.out.println("TODO");
         return "TODO";
     }
 }
