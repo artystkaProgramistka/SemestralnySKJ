@@ -19,7 +19,7 @@ public class DatabaseNode {
 
     // needed to avoid cycles in the network requests
     private int nodeTaskIdCounter = 0;
-    private HashSet<String> doneTaskIds;
+    private final HashSet<String> doneTaskIds;
 
     public DatabaseNode(int tcpPort, int key, int value, List<String> connections) throws IOException {
         this.tcpPort = tcpPort;
@@ -34,10 +34,6 @@ public class DatabaseNode {
             connectionHandlers.put(connection, handler);
         }
         doneTaskIds = new HashSet<>();
-    }
-
-    public String getNewTaskId() {
-        return "TASK-" + nodeTaskIdCounter++ + ":" + getMyHost() + ":" + tcpPort;
     }
 
     public static void main(String[] args) throws IOException {
@@ -68,6 +64,10 @@ public class DatabaseNode {
 
         DatabaseNode node = new DatabaseNode(tcpPort, key, value, connections);
         node.start();
+    }
+
+    public String getNewTaskId() {
+        return "TASK-" + nodeTaskIdCounter++ + ":" + getMyHost() + ":" + tcpPort;
     }
 
     public void start() {
@@ -160,6 +160,8 @@ public class DatabaseNode {
             return handleFindKey(parts[1], parts[2], parts[3]);
         } else if (operation.equals("srv__set-value")) {
             return handleSetValue(parts[1], parts[2], parts[3]);
+        } else if (operation.equals("srv__get-value")) {
+            return handleGetValue(parts[1], parts[2], parts[3]);
         } else if (operation.equals("set-value")) {
             return handleSetValue(getNewTaskId(), parts[1], "");
         } else if (operation.equals("get-value")) {
@@ -201,15 +203,21 @@ public class DatabaseNode {
     }
 
     private String handleGetValue(String taskId, String keyString, String parentNode) {
+        if (doneTaskIds.contains(taskId)) return "ERROR";
+        doneTaskIds.add(taskId);
+
         int _key = Integer.parseInt(keyString);
-        if (_key == key) {
+        if (key == _key) {
             return key + ":" + value;
-        } else {
-            System.out.println("TODO");
-            for (NodeConnectionHandler handler : connectionHandlers.values()) {
-            }
-            return "ERROR";
         }
+
+        for (HashMap.Entry<String, NodeConnectionHandler> entry : connectionHandlers.entrySet()) {
+            if (entry.getKey().equals(parentNode)) continue;
+            String result = entry.getValue().getValue(taskId, _key);
+            if (result.equals("ERROR")) continue;
+            return result;
+        }
+        return "ERROR";
     }
 
     private String handleFindKey(String taskId, String keyString, String parentNode) {

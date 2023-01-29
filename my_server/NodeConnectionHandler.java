@@ -1,6 +1,5 @@
 package my_server;
 
-import javax.xml.crypto.Data;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -8,8 +7,6 @@ import java.io.PrintWriter;
 import java.net.ConnectException;
 import java.net.Socket;
 import java.net.UnknownHostException;
-
-import static java.lang.Thread.sleep;
 
 class NodeConnectionHandler {
 
@@ -88,5 +85,9 @@ class NodeConnectionHandler {
 
     public String setValue(String taskId, int key, int value) {
         return sendMessage("srv__set-value " + taskId + " " + key + ":" + value + " " + myHost + ":" + myPort);
+    }
+
+    public String getValue(String taskId, int key) {
+        return sendMessage("srv__get-value " + taskId + " " + key + " " + myHost + ":" + myPort);
     }
 }
