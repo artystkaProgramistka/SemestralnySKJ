@@ -17,8 +17,6 @@ public class DatabaseNode {
     private int key;
     private int value;
 
-    private ArrayList<Thread> threads;
-
     // needed to avoid cycles in the network requests
     private int nodeTaskIdCounter = 0;
     private HashSet<String> doneTaskIds;
@@ -36,7 +34,6 @@ public class DatabaseNode {
             connectionHandlers.put(connection, handler);
         }
         doneTaskIds = new HashSet<>();
-        threads = new ArrayList<>();
     }
 
     public String getNewTaskId() {
@@ -151,12 +148,6 @@ public class DatabaseNode {
             }
         });
         t.start();
-        threads.add(t);
-        // try {
-        //     t.wait();
-        // } catch (InterruptedException e) {
-        //     throw new RuntimeException(e);
-        // }
         return "ASYNC";
     }
 
