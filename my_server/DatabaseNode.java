@@ -17,6 +17,8 @@ public class DatabaseNode {
     private int key;
     private int value;
 
+    private ArrayList<Thread> threads;
+
     // needed to avoid cycles in the network requests
     private int nodeTaskIdCounter = 0;
     private HashSet<String> doneTaskIds;
@@ -34,6 +36,7 @@ public class DatabaseNode {
             connectionHandlers.put(connection, handler);
         }
         doneTaskIds = new HashSet<>();
+        threads = new ArrayList<>();
     }
 
     public String getNewTaskId() {
@@ -76,43 +79,54 @@ public class DatabaseNode {
             ServerSocket serverSocket = new ServerSocket(tcpPort);
             while (true) {
                 Socket newSocket = serverSocket.accept();
-                try {
-                    BufferedReader in = new BufferedReader(new InputStreamReader(newSocket.getInputStream()));
-                    PrintWriter out = new PrintWriter(newSocket.getOutputStream(), true);
-                    String request = in.readLine();
-                    String response = handleRequest(request);
-                    if (response == "TERMINATED") {
-                        System.out.println("Terminating server");
-                        out.println("OK");
-                        break;
-                    } else {
-                        System.out.println("Sending response to client: " + response);
-                        out.println(response);
-                    }
-                    out.close();
-                    in.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+                System.out.println(">>>>>>> new socket accepted");
+                if (handleNewSocket(newSocket)) break;
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
+        System.out.println("END");
+    }
+
+    private boolean handleNewSocket(Socket newSocket) {
+        try {
+            BufferedReader in = new BufferedReader(new InputStreamReader(newSocket.getInputStream()));
+            PrintWriter out = new PrintWriter(newSocket.getOutputStream(), true);
+            String request = in.readLine();
+            String response = handleRequest(request, newSocket, in, out);
+            if (response == "TERMINATED") {
+                System.out.println("Terminating server");
+                out.println("OK");
+                out.close();
+                in.close();
+                return true;
+            } else if (response == "ASYNC") {
+                return false;
+            } else {
+                System.out.println("Sending response to client: " + response);
+                out.println(response);
+                in.close();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return false;
     }
 
     public String getMyHost() {
         return "localhost";
     }
 
-    public String getMyHostId() {
-        return "HOST_ID:" + getMyHost() + ":" + tcpPort;
-    }
-
-    public String handleRequest(String request) {
+    public String handleRequest(String request, Socket newSocket, BufferedReader in, PrintWriter out) {
         String[] parts = request.split(" ");
         String operation = parts[0];
         System.out.println("Handling request: " + request);
-        if (operation.equals("srv__connect")) {
+        if (operation.equals("terminate")) {
+            for (NodeConnectionHandler handler : connectionHandlers.values()) {
+                handler.disconnect();
+            }
+            return "TERMINATED";
+        } else if (operation.equals("srv__connect")) {
             String[] addr = parts[1].split(":");
             String host = addr[0];
             int port = Integer.parseInt(addr[1]);
@@ -124,16 +138,41 @@ public class DatabaseNode {
             connectionHandlers.remove(parts[1]);
             System.out.println("Server " + parts[1] + " has disconnected.");
             return "OK";
-        } else if (operation.equals("srv__get-min")) {
+        }
+        Thread t = new Thread(() -> {
+            String response = handleAsyncRequest(parts, operation, newSocket);
+            System.out.println("Sending async response: " + response);
+            out.println(response);
+            out.close();
+            try {
+                in.close();
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+        t.start();
+        threads.add(t);
+        // try {
+        //     t.wait();
+        // } catch (InterruptedException e) {
+        //     throw new RuntimeException(e);
+        // }
+        return "ASYNC";
+    }
+
+    private String handleAsyncRequest(String[] parts, String operation, Socket newSocket) {
+        if (operation.equals("srv__get-min")) {
             return handleGetMinOrMax(parts[1], "min", parts[2]);
         } else if (operation.equals("srv__get-max")) {
             return handleGetMinOrMax(parts[1], "max", parts[2]);
         } else if (operation.equals("srv__find-key")) {
             return handleFindKey(parts[1], parts[2], parts[3]);
+        } else if (operation.equals("srv__set-value")) {
+            return handleSetValue(parts[1], parts[2], parts[3]);
         } else if (operation.equals("set-value")) {
-            return handleSetValue(parts[1]);
+            return handleSetValue(getNewTaskId(), parts[1], "");
         } else if (operation.equals("get-value")) {
-            return handleGetValue(parts[1]);
+            return handleGetValue(getNewTaskId(), parts[1], "");
         } else if (operation.equals("find-key")) {
             return handleFindKey(getNewTaskId(), parts[1], "");
         } else if (operation.equals("new-record")) {
@@ -142,30 +181,35 @@ public class DatabaseNode {
             return handleGetMinOrMax(getNewTaskId(), "min", "");
         } else if (operation.equals("get-max")) {
             return handleGetMinOrMax(getNewTaskId(), "max", "");
-        } else if (operation.equals("terminate")) {
-            for (NodeConnectionHandler handler : connectionHandlers.values()) {
-                handler.disconnect();
-            }
-            return "TERMINATED";
         } else {
             return "ERROR -- Unknown operation: " + operation;
         }
-        // TODO: implement other operations
     }
 
-    private String handleSetValue(String keyValueString) {
+    private String handleSetValue(String taskId, String keyValueString, String parentNode) {
+        if (doneTaskIds.contains(taskId)) return "ERROR";
+        doneTaskIds.add(taskId);
+
         String[] keyValue = keyValueString.split(":");
         int _key = Integer.parseInt(keyValue[0]);
         int _value = Integer.parseInt(keyValue[1]);
-        if (key != _key) {
-            // TODO: query other nodes
-            return "ERROR";
+        if (key == _key) {
+            this.value = _value;
+            return "OK";
         }
-        this.value = _value;
-        return "OK";
+
+        for (HashMap.Entry<String, NodeConnectionHandler> entry : connectionHandlers.entrySet()) {
+            if (entry.getKey().equals(parentNode)) continue;
+            String result = entry.getValue().setValue(taskId, _key, _value);
+            if (result.equals("ERROR")) continue;
+            if (result.equals("OK")) {
+                return "OK";
+            }
+        }
+        return "ERROR";
     }
 
-    private String handleGetValue(String keyString) {
+    private String handleGetValue(String taskId, String keyString, String parentNode) {
         int _key = Integer.parseInt(keyString);
         if (_key == key) {
             return key + ":" + value;
@@ -187,7 +231,7 @@ public class DatabaseNode {
             for (HashMap.Entry<String, NodeConnectionHandler> entry : connectionHandlers.entrySet()) {
                 if (entry.getKey().equals(parentNode)) continue;
                 String searchResult = entry.getValue().findKey(taskId, _key);
-                if (searchResult == "ERROR") continue;
+                if (searchResult.equals("ERROR")) continue;
                 if (!searchResult.equals("ERROR")) {
                     return searchResult;
                 }
@@ -211,18 +255,18 @@ public class DatabaseNode {
         for (HashMap.Entry<String, NodeConnectionHandler> entry : connectionHandlers.entrySet()) {
             if (entry.getKey().equals(parentNode)) continue;
             String[] keyValue = entry.getValue().getOperation(taskId, operation).split(":");
-            if (keyValue[0] == "ERROR") continue;
+            if (keyValue[0].equals("ERROR")) continue;
             int k = Integer.parseInt(keyValue[0]);
             int v = Integer.parseInt(keyValue[1]);
             if (operation.equals("min")) {
                 if (v < returnValue) {
                     returnKey = k;
-                    returnValue = k;
+                    returnValue = v;
                 }
             } else if (operation.equals("max")) {
                 if (v > returnValue) {
                     returnKey = k;
-                    returnValue = k;
+                    returnValue = v;
                 }
             } else {
                 throw new RuntimeException();

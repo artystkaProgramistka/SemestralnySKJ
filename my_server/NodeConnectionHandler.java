@@ -85,4 +85,8 @@ class NodeConnectionHandler {
     public String findKey(String taskId, int key) {
         return sendMessage("srv__find-key " + taskId + " " + key + " " + myHost + ":" + myPort);
     }
+
+    public String setValue(String taskId, int key, int value) {
+        return sendMessage("srv__set-value " + taskId + " " + key + ":" + value + " " + myHost + ":" + myPort);
+    }
 }
