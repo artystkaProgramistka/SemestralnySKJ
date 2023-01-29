@@ -1,5 +1,5 @@
 tsp -K  # to numerate task from 0 
-tsp -S 10 # max 10 tasks in parallel
+tsp -S 50 # max 50 tasks in parallel
 echo ""
 echo "============================================================== compile"
 echo ""
@@ -23,9 +23,9 @@ echo ""
 # bash tests/script-3-0_1.sh
 # bash tests/script-3-0_1.sh
 # bash tests/script-3-1_1.sh
-bash tests/script-7-1.sh
+# bash tests/script-7-1.sh
 # bash tests/script-7-2.sh
-# bash tests/script-7-p.sh
+bash tests/script-7-p.sh
 
 # sleep 1
 # echo ""
