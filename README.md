@@ -85,6 +85,8 @@ komunikaty klienta, są realizowane asynchronicznie (na nowym tymczasowym wątku
 ### Opis implementacji protokołu
 
 Opis realizowanych komunikatów węzeł-węzeł jest w [dokumentacji](./DOCUMENTATION.md).
+W przypadku każdego komunikatu, protokół sprowadza się do jednorazowego wysłania polecenia i odebraniu
+odpowiedzi/wyniku/informacji o niepowodzeniu.
 
 Implementacja komunikatów `srv__get-value`, `srv__set-value`, `srv__find-key`, `srv__get-min`, `srv__get-max` jest
 bardzo podobna.
@@ -96,3 +98,20 @@ komunikat od klienta (`DatabaseClient`).
 
 Wysyłanie wszystkich komunikatów węzeł-węzeł (`srv__*`) jest owiniętę pomocniczą klasą `NodeConnectionHandler` dla
 przejżystości implementacji.
+
+### Szczegółowy opis implementacji najważniejszych metod
+
+- Konstruktor `DatabaseNode` -- przyjmuje sparsowane argumenty z polecenia niezbędne do utworzenia węzła. Konstruje
+  połączenia z innymi węzłami, wysyłając `srv__connect` do każdego z nich.
+- `DatabaseNode.start` -- zawiera pętlę główną używającą `ServerSocket.accept`. Pętla jest przerywana w wyniku
+  otrzymania komunikatu `"terminate"` od klienta (po wcześniejszym wysłaniu komunikatu `srv__disconnect` do połączonych
+  bezpośrednio węzłów).
+- `DatabaseNode.handleNewSocket` -- implementuje obsługę nowego obiektu `Socket` otrzymaną w metodzie `start`, odczytuje
+  i parsuje komunikat, odsyła wynik komunikatu.
+- `DatabaseNode.handleNewRequest` -- realizuje poszczególne polecenia -- przyjmuje komunikat i jego argumenty, i zwraca
+  odpowiedź/wynik/informację o niepowodzeniu. Niektóre komunikaty realizuje asynchronicznie na oddzielnym tymczasowym
+  wątku -- dla przejżystości
+  realizacje są owinięte metodą `handleAsyncRequest`.
+- `DatabaseNode.getNewTaskId` -- tworzy nowy globalnie unikalny
+  napis `"TASK_ID:<licznik_węzła>:<adres_węzła>:<tcpport_węzła>`, oraz inkrementuje licznik zadań węzła (inicjowany
+  zerem w momencie skonstruowania `DatabaseNode`).
